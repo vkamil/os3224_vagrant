@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 *~
 _*
 *.o
@@ -14,3 +15,21 @@ kernel
 kernelmemfs
 mkfs
 .gdbinit
+=======
+*~
+_*
+*.o
+*.d
+*.asm
+*.sym
+*.img
+vectors.S
+bootblock
+entryother
+initcode
+initcode.out
+kernel
+kernelmemfs
+mkfs
+.gdbinit
+>>>>>>> 824ddf76d4aa59c28e182672ac8d27f225f53562
