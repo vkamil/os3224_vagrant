@@ -172,9 +172,11 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_hello\
+	_uniq\
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: mkfs README uniq_test.txt $(UPROGS)
+	./mkfs fs.img README uniq_test.txt $(UPROGS)
 
 -include *.d
 
