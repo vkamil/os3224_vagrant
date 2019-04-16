@@ -47,7 +47,14 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->ctime = ticks;
+  p->stime = 0;
+  p->retime = 0;
+  p->rutime = 0;
+
   release(&ptable.lock);
+
+  
 
   // Allocate kernel stack.
   if((p->kstack = kalloc()) == 0){
@@ -205,8 +212,12 @@ exit(void)
     }
   }
 
+  
+
   // Jump into the scheduler, never to return.
   proc->state = ZOMBIE;
+
+  p->ttime = ticks;
   sched();
   panic("zombie exit");
 }
@@ -262,19 +273,93 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+
+
+//new scheduler
+void scheduler(void){
+  struct proc *p;
+  int p_found = 1;
+  
+
+  for(;;){
+
+    sti();
+    if (!p_found) hlt();
+
+    p_found = 0;
+    acquire(&ptable.lock);
+    for(p=ptable.proc;p< &ptable.proc[NPROC];p++){
+
+      #ifdef DEFAULT
+        if (p->state !=RUNNABLE)
+          continue;
+      #else
+      #ifdef FCFS
+            struct proc *minP = 0;
+
+            if(p->state != RUNNABLE)
+              continue;
+
+            if(p->pid > 1)
+            {
+              if (minP != 0){
+                if(p->ctime < minP->ctime)
+                  minP = p;
+              }
+              else
+                  minP = p;
+            }
+
+           
+            if(minP != 0 && minP->state == RUNNABLE)
+                p = minP;
+      #else
+      #ifdef FRR
+            struct proc *minP = 0;
+
+            if(p->state != RUNNABLE)
+              continue;
+
+            if(p->pid > 1)
+            {
+              if (minP != 0){
+                if((p->ctime +p->rutime) < (minP->ctime + minP->rutime))
+                  minP = p;
+              }
+              else
+                  minP = p;
+            }
+
+           
+            if(minP != 0 && minP->state == RUNNABLE)
+                p = minP;
+
+      #endif
+      #endif
+      #endif
+      p_found = 1;
+      proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&cpu->scheduler,proc->context);
+      switchkvm();
+      proc=0;
+
+    }
+    release(&ptable.lock);
+  }
+}
+
+
+/*
 void
 scheduler(void)
 {
   struct proc *p;
-  int foundproc = 1;
 
   for(;;){
     // Enable interrupts on this processor.
     sti();
-
-    if (!foundproc) hlt();
-
-    foundproc = 0;
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
@@ -285,7 +370,6 @@ scheduler(void)
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      foundproc = 1;
       proc = p;
       switchuvm(p);
       p->state = RUNNING;
@@ -300,6 +384,7 @@ scheduler(void)
 
   }
 }
+*/
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state.
@@ -470,3 +555,72 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+int wait_stat(int *wtime, int *rtime, int *iotime, int *status){
+  struct proc *p;
+  int havekids, pid;
+
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for zombie children.
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != proc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+
+
+      *wtime = p->retime;
+      *rtime = p->rutime;
+      *iotime = p->stime;
+        // Found one.
+        pid = p->pid;
+        *status = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        freevm(p->pgdir);
+        p->state = UNUSED;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->stime = 0;
+        p->rutime = 0;
+        p->retime = 0;
+        p->ctime = 0;
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || proc->killed){
+      release(&ptable.lock);
+      *status = -1;
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(proc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+void incCounters(void){
+  struct proc *p;
+  acquire(&ptable.lock);
+  for (p=ptable.proc;p<&ptable.proc[NPROC];p++){
+    if (p->state==SLEEPING){
+      p->stime++;
+    }
+    if (p->state==RUNNING){
+      p->rutime++;
+    }
+    if (p->state==RUNNABLE){
+      p->retime++;
+    }
+  }
+  release(&ptable.lock);
+}
+
+
+
